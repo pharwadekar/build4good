@@ -1,190 +1,236 @@
 import { useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from 'react-native';
-import { Camera as CameraIcon, Camera as FlipCamera } from 'lucide-react-native';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { useInventoryStore } from '@/store/useInventoryStore';
-import { useThemeStore } from '@/store/useThemeStore';
-import { detectObjects } from '@/utils/objectDetection';
-import { lightTheme, darkTheme } from '@/utils/theme';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform, Pressable, Alert } from 'react-native';
+import { CameraView, CameraType, CameraMode, useCameraPermissions } from 'expo-camera';
+import { AntDesign, Feather } from '@expo/vector-icons';
+import { FontAwesome6 } from '@expo/vector-icons';
+import axios from 'axios';
+import * as ImageManipulator from 'expo-image-manipulator'; // Add this import
+import { addItem } from '../path/to/inventoryManager';
+import Constants from 'expo-constants';
+import foodData from '/foodData'; // Adjust the import path as necessary
+
+const apiKey = Constants.manifest?.extra?.ROBOFLOW_API_KEY;
 
 export default function ScanScreen() {
-  const [type, setType] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
-  const [processing, setProcessing] = useState(false);
-  const cameraRef = useRef(null);
-  const { addItem } = useInventoryStore();
-  const isDarkMode = useThemeStore((state) => state.isDarkMode);
-  const theme = isDarkMode ? darkTheme : lightTheme;
+  const cameraRef = useRef<CameraView>(null);
+  const [uri, setUri] = useState<string | null>(null);
+  const [mode, setMode] = useState<CameraMode>('picture');
+  const [facing, setFacing] = useState<CameraType>('back');
+  const [recording, setRecording] = useState(false);
+  const [inventory, setInventory] = useState([]);
+
+  const addItem = (item) => {
+    setInventory((prevInventory) => [...prevInventory, item]);
+    console.log('Item added:', item);
+  };
 
   if (!permission) {
-    return <View />;
+    return null;
   }
 
   if (!permission.granted) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <Text style={[styles.permissionText, { color: theme.text }]}>
-          We need your permission to use the camera
-        </Text>
-        <TouchableOpacity
-          style={[styles.permissionButton, { backgroundColor: theme.primary }]}
-          onPress={requestPermission}>
+      <View style={styles.container}>
+        <Text style={styles.permissionText}>We need your permission to use the camera</Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
           <Text style={styles.permissionButtonText}>Grant Permission</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const handleCapture = async () => {
-    if (cameraRef.current && !processing) {
-      setProcessing(true);
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          base64: true,
-          quality: 0.7,
+  const takePicture = async () => {
+    try {
+      const photo = await cameraRef.current?.takePictureAsync({ base64: true });
+      if (photo?.uri) {
+        // Resize the image using Expo ImageManipulator
+        const resizedImage = await ImageManipulator.manipulateAsync(
+          photo.uri,
+          [{ resize: { width: 800, height: 800 } }], // Resize to 800x800
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG } // Compress and save as JPEG
+        );
+
+        // Convert resized image to Base64
+        const resizedBase64 = await fetch(resizedImage.uri)
+          .then((res) => res.blob())
+          .then((blob) => {
+            return new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          });
+
+        // Send the resized Base64 image to Roboflow
+        const response = await axios({
+          method: 'POST',
+          url: 'https://detect.roboflow.com/pantry-object-detection/1',
+          params: {
+            api_key: "TMi5YdMlNrGBnX2Z9B7i", // Use your Roboflow API key
+          },
+          data: resizedBase64.split(',')[1], // Remove the Base64 prefix
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
         });
 
-        const detectionResult = await detectObjects(photo.base64);
-        
-        detectionResult.predictions.forEach((prediction) => {
-          addItem({
-            name: prediction.class,
-            quantity: 1,
-            category: 'Detected',
-            expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        // Handle the response
+        if (response.data && response.data.predictions) {
+          console.log('Detected objects:', response.data.predictions);
+          response.data.predictions.forEach((prediction) => {
+            const itemName = prediction.class;
+            const quantity = 1; // Default quantity
+            const category = 'Detected'; // Default category
+            addItem({ name: itemName, quantity, category, expiryDate: '' });
           });
-        });
-      } catch (error) {
-        console.error('Error capturing image:', error);
-      } finally {
-        setProcessing(false);
+          Alert.alert('Success', 'Items detected and added to inventory!');
+        } else {
+          Alert.alert('No Items Detected', 'No objects were detected in the image.');
+        }
       }
+    } catch (error) {
+      console.error('Error detecting objects:', error);
+      Alert.alert('Error', 'Failed to detect objects.');
     }
   };
 
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
-        <Text style={[styles.webText, { color: theme.text }]}>
-          Camera functionality is not available on web.
-        </Text>
-        <Text style={[styles.webSubtext, { color: theme.textSecondary }]}>
-          Please use a mobile device to scan items.
-        </Text>
-      </View>
-    );
-  }
+  const recordVideo = async () => {
+    if (recording) {
+      setRecording(false);
+      cameraRef.current?.stopRecording();
+      return;
+    }
+    setRecording(true);
+    const video = await cameraRef.current?.recordAsync();
+    console.log({ video });
+  };
 
-  return (
-    <View style={styles.container}>
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        type={type}>
-        <View style={styles.overlay}>
-          <View style={styles.header}>
-            <Text style={styles.headerText}>Scan Item</Text>
-          </View>
-          <View style={styles.scanArea}>
-            <View style={[styles.scanFrame, { borderColor: theme.primary }]} />
-          </View>
-          <View style={styles.controls}>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: `${theme.primary}CC` }]}
-              onPress={() => setType(current => (current === 'back' ? 'front' : 'back'))}>
-              <FlipCamera size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.captureButton, { backgroundColor: theme.primary }]}
-              onPress={handleCapture}
-              disabled={processing}>
-              <CameraIcon size={32} color="#FFFFFF" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </CameraView>
+  const toggleMode = () => {
+    setMode((prev) => (prev === 'picture' ? 'video' : 'picture'));
+  };
+
+  const toggleFacing = () => {
+    setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
+  };
+
+  const renderPicture = () => (
+    <View style={styles.previewContainer}>
+      <Image source={{ uri }} style={styles.previewImage} />
+      <TouchableOpacity style={styles.captureButton} onPress={() => setUri(null)}>
+        <Text style={styles.buttonText}>Retake</Text>
+      </TouchableOpacity>
     </View>
   );
+
+  const renderCamera = () => (
+    <CameraView
+      style={styles.camera}
+      ref={cameraRef}
+      mode={mode}
+      facing={facing}
+      responsiveOrientationWhenOrientationLocked
+    >
+      <View style={styles.controls}>
+        <Pressable onPress={toggleMode}>
+          {mode === 'picture' ? (
+            <AntDesign name="picture" size={32} color="white" />
+          ) : (
+            <Feather name="video" size={32} color="white" />
+          )}
+        </Pressable>
+        <Pressable onPress={mode === 'picture' ? takePicture : recordVideo}>
+          <View style={styles.shutterButton}>
+            <View
+              style={[
+                styles.shutterButtonInner,
+                { backgroundColor: mode === 'picture' ? 'white' : 'red' },
+              ]}
+            />
+          </View>
+        </Pressable>
+        <Pressable onPress={toggleFacing}>
+          <FontAwesome6 name="rotate-left" size={32} color="white" />
+        </Pressable>
+      </View>
+    </CameraView>
+  );
+
+  return <View style={styles.container}>{uri ? renderPicture() : renderCamera()}</View>;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#000',
   },
   camera: {
     flex: 1,
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  header: {
-    padding: 20,
-    paddingTop: 60,
-    alignItems: 'center',
-  },
-  headerText: {
-    fontSize: 24,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#FFFFFF',
-  },
-  scanArea: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanFrame: {
-    width: 250,
-    height: 250,
-    borderWidth: 2,
-    backgroundColor: 'transparent',
+    width: '100%',
   },
   controls: {
+    position: 'absolute',
+    bottom: 44,
+    left: 0,
+    width: '100%',
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 30,
   },
-  button: {
-    padding: 15,
-    borderRadius: 30,
-    marginRight: 20,
+  shutterButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 5,
+    borderColor: 'white',
+    width: 85,
+    height: 85,
+    borderRadius: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  captureButton: {
+  shutterButtonInner: {
     width: 70,
     height: 70,
-    borderRadius: 35,
+    borderRadius: 50,
+  },
+  previewContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  previewImage: {
+    width: '90%',
+    height: '70%',
+    borderRadius: 10,
+  },
+  captureButton: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+  },
+  buttonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   permissionText: {
-    fontSize: 18,
-    fontFamily: 'Inter_400Regular',
     textAlign: 'center',
+    color: '#FFF',
+    fontSize: 18,
     marginBottom: 20,
   },
   permissionButton: {
     padding: 15,
+    backgroundColor: '#007AFF',
     borderRadius: 10,
+    alignItems: 'center',
   },
   permissionButtonText: {
+    color: '#FFF',
     fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  webText: {
-    fontSize: 20,
-    fontFamily: 'Inter_600SemiBold',
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  webSubtext: {
-    fontSize: 16,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-    marginTop: 10,
+    fontWeight: '600',
   },
 });

@@ -19,6 +19,9 @@
     "plugins": ["expo-router"],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "ROBOFLOW_API_KEY": "TMi5YdMlNrGBnX2Z9B7i"
     }
   }
 }

@@ -10,18 +10,23 @@
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.2.3",
+    "@expo/config-plugins": "~9.0.0",
+    "@expo/metro-config": "^0.19.12",
+    "@expo/prebuild-config": "~8.0.0",
     "@expo/vector-icons": "^14.0.2",
     "@lucide/lab": "^0.1.2",
     "@notionhq/client": "^2.2.14",
     "@react-native-async-storage/async-storage": "^1.23.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
+    "axios": "^1.8.4",
     "expo": "~52.0.41",
     "expo-blur": "^14.0.3",
     "expo-camera": "^16.0.18",
     "expo-constants": "~17.0.8",
     "expo-font": "~13.0.4",
     "expo-haptics": "^14.0.1",
+    "expo-image-manipulator": "~13.0.6",
     "expo-linear-gradient": "^14.0.2",
     "expo-linking": "^7.0.5",
     "expo-router": "~4.0.19",
@@ -48,5 +53,21 @@
     "@babel/core": "^7.25.2",
     "@types/react": "~18.3.12",
     "typescript": "^5.3.3"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "lucide-react-native",
+          "@expo/config-plugins",
+          "@expo/metro-config",
+          "@expo/prebuild-config",
+          "@lucide/lab",
+          "@notionhq/client",
+          "expo-modules-autolinking"
+        ],
+        "listUnknownPackages": false
+      }
+    }
   }
 }
