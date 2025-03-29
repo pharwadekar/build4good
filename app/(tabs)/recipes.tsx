@@ -10,7 +10,7 @@ const RECIPES = [
     title: 'Pasta Primavera',
     time: '30 mins',
     servings: 4,
-    image: 'https://source.unsplash.com/random/400x300?pasta',
+    image: 'https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=500',
     ingredients: [
       '8 oz pasta',
       '2 cups mixed vegetables',
