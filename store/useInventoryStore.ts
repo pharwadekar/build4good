@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as UUID from 'react-native-uuid';
 
 export interface InventoryItem {
   id: string;
@@ -18,20 +19,39 @@ interface InventoryState {
   clearInventory: () => void;
 }
 
+function generateRandomId() {
+  return Math.random().toString(36).substr(2, 9); // Generates a random string
+}
+
 export const useInventoryStore = create<InventoryState>((set) => ({
   items: [],
-  addItem: (item) => {
+  addItem: (item) =>
     set((state) => {
-      const newItem = {
-        ...item,
-        id: Math.random().toString(36).substr(2, 9),
-        dateAdded: new Date().toISOString(),
+      const existingItem = state.items.find(
+        (existing) => existing.name.toLowerCase() === item.name.toLowerCase()
+      );
+
+      if (existingItem) {
+        return {
+          items: state.items.map((existing) =>
+            existing.name.toLowerCase() === item.name.toLowerCase()
+              ? { ...existing, quantity: existing.quantity + item.quantity }
+              : existing
+          ),
+        };
+      }
+
+      return {
+        items: [
+          ...state.items,
+          {
+            ...item,
+            id: generateRandomId(), // Use the custom random ID generator
+            dateAdded: new Date().toISOString(),
+          },
+        ],
       };
-      const newItems = [...state.items, newItem];
-      AsyncStorage.setItem('inventory', JSON.stringify(newItems));
-      return { items: newItems };
-    });
-  },
+    }),
   updateItem: (id, updatedItem) => {
     set((state) => {
       const newItems = state.items.map((item) =>
@@ -41,13 +61,10 @@ export const useInventoryStore = create<InventoryState>((set) => ({
       return { items: newItems };
     });
   },
-  removeItem: (id) => {
-    set((state) => {
-      const newItems = state.items.filter((item) => item.id !== id);
-      AsyncStorage.setItem('inventory', JSON.stringify(newItems));
-      return { items: newItems };
-    });
-  },
+  removeItem: (id) =>
+    set((state) => ({
+      items: state.items.filter((item) => item.id !== id),
+    })),
   clearInventory: () => {
     set({ items: [] });
     AsyncStorage.removeItem('inventory');

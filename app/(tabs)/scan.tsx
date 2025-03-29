@@ -5,9 +5,9 @@ import { AntDesign, Feather } from '@expo/vector-icons';
 import { FontAwesome6 } from '@expo/vector-icons';
 import axios from 'axios';
 import * as ImageManipulator from 'expo-image-manipulator'; // Add this import
-import { addItem } from '../path/to/inventoryManager';
+import { useInventoryStore } from '../../store/useInventoryStore';
 import Constants from 'expo-constants';
-import foodData from '/foodData'; // Adjust the import path as necessary
+import foodData from './foodData.json'; // Adjust the import path as necessary
 
 const apiKey = Constants.manifest?.extra?.ROBOFLOW_API_KEY;
 
@@ -18,12 +18,7 @@ export default function ScanScreen() {
   const [mode, setMode] = useState<CameraMode>('picture');
   const [facing, setFacing] = useState<CameraType>('back');
   const [recording, setRecording] = useState(false);
-  const [inventory, setInventory] = useState([]);
-
-  const addItem = (item) => {
-    setInventory((prevInventory) => [...prevInventory, item]);
-    console.log('Item added:', item);
-  };
+  const addItem = useInventoryStore((state) => state.addItem);
 
   if (!permission) {
     return null;
@@ -68,7 +63,7 @@ export default function ScanScreen() {
           method: 'POST',
           url: 'https://detect.roboflow.com/pantry-object-detection/1',
           params: {
-            api_key: "TMi5YdMlNrGBnX2Z9B7i", // Use your Roboflow API key
+            api_key: "TMi5YdMlNrGBnX2Z9B7i", // Use the environment variable
           },
           data: resizedBase64.split(',')[1], // Remove the Base64 prefix
           headers: {
@@ -79,12 +74,30 @@ export default function ScanScreen() {
         // Handle the response
         if (response.data && response.data.predictions) {
           console.log('Detected objects:', response.data.predictions);
+
           response.data.predictions.forEach((prediction) => {
             const itemName = prediction.class;
-            const quantity = 1; // Default quantity
-            const category = 'Detected'; // Default category
-            addItem({ name: itemName, quantity, category, expiryDate: '' });
+
+            // Find the item in the JSON data
+            const matchedItem = foodData.find((item) => item.name.toLowerCase() === itemName.toLowerCase());
+
+            if (matchedItem) {
+              const category = matchedItem.category;
+              const quantity = 1; // Default quantity
+
+              // Add the item to the global inventory
+              addItem({
+                name: itemName,
+                quantity,
+                category,
+                expiryDate: '',
+              });
+              console.log('Item added:', { name: itemName, quantity, category });
+            } else {
+              console.warn(`Item "${itemName}" not found in food data.`);
+            }
           });
+
           Alert.alert('Success', 'Items detected and added to inventory!');
         } else {
           Alert.alert('No Items Detected', 'No objects were detected in the image.');
